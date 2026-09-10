@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 전적 — GitHub</title>
+<style>
+  :root{--bg:#f7f7f4;--ink:#1c1c1a;--mute:#6b6a64;--line:#dcdbd3;--ai:#2f4fd6;--ai-soft:#dfe5fb;--human:#c9c8bf}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Pretendard","Apple SD Gothic Neo",system-ui,sans-serif}
+  main{max-width:880px;margin:0 auto;padding:40px 20px 80px}
+  h1{font-size:20px;font-weight:600;margin:0}
+  h2{font-size:15px;font-weight:600;margin:36px 0 10px}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  .row{display:flex;gap:8px;align-items:center}
+  input{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font:inherit;background:#fff;min-width:200px}
+  button,a.btn{padding:8px 14px;border:1px solid var(--ink);border-radius:6px;background:var(--ink);color:#fff;font:inherit;cursor:pointer;text-decoration:none}
+  button.ghost,a.ghost{background:transparent;color:var(--ink)}
+  button:disabled{opacity:.5;cursor:default}
+  .hero{margin-top:28px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:end}
+  .big{font-size:64px;font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .big small{font-size:22px;color:var(--mute);margin-left:4px}
+  .sub{color:var(--mute);font-size:14px}
+  .bar{height:14px;border-radius:7px;background:var(--human);overflow:hidden;display:flex}
+  .bar i{display:block;height:100%;background:var(--ai)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{font-weight:500;color:var(--mute);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle;font-variant-numeric:tabular-nums}
+  td.num{text-align:right;white-space:nowrap}
+  .mini{height:8px;border-radius:4px;background:var(--human);overflow:hidden;min-width:120px}
+  .mini i{display:block;height:100%;background:var(--ai)}
+  .chips span{display:inline-block;background:var(--ai-soft);color:#1d2f8a;border-radius:4px;padding:1px 7px;font-size:12px;margin:2px 4px 2px 0}
+  .months{display:flex;gap:4px;align-items:flex-end;height:120px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .m{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;min-width:0}
+  .m b{display:block;background:var(--human);border-radius:3px 3px 0 0}
+  .m b.ai{background:var(--ai)}
+  .mlabels{display:flex;gap:4px;font-size:11px;color:var(--mute)}
+  .mlabels span{flex:1;text-align:center;overflow:hidden;white-space:nowrap}
+  .note{font-size:13px;color:var(--mute);border-left:3px solid var(--line);padding-left:10px;margin-top:14px}
+  .err{color:#a32d2d}
+  #out{display:none}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>AI 전적 <span class="sub">— GitHub 커밋 기준</span></h1>
+    <div class="row" id="auth"></div>
+  </div>
+
+  <div class="row" style="margin-top:20px">
+    <input id="user" placeholder="GitHub 아이디 (공개 레포만)">
+    <button id="scanBtn" onclick="scan()">전적 검색</button>
+    <span id="status" class="sub"></span>
+  </div>
+
+  <section id="out">
+    <div class="hero">
+      <div>
+        <div class="sub" id="who"></div>
+        <div class="big"><span id="ratio">0</span><small>%</small></div>
+        <div class="sub">AI가 관여한 커밋 비율</div>
+      </div>
+      <div>
+        <div class="bar"><i id="heroBar" style="width:0"></i></div>
+        <div class="sub" id="counts" style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <h2>월별 커밋 (진한 색 = AI 관여)</h2>
+    <div class="months" id="months"></div>
+    <div class="mlabels" id="mlabels"></div>
+
+    <h2>어떤 도구·모델을 썼나</h2>
+    <table id="tools"><thead><tr><th>도구</th><th class="num">커밋</th><th>모델 (트레일러에 모델명이 있을 때만)</th></tr></thead><tbody></tbody></table>
+
+    <h2>레포별 전적</h2>
+    <table id="repos"><thead><tr><th>레포</th><th>AI 비율</th><th class="num">AI / 전체</th><th>도구</th></tr></thead><tbody></tbody></table>
+
+    <p class="note" id="note"></p>
+    <div id="errors" class="err"></div>
+  </section>
+</main>
+
+<script>
+async function init(){
+  const me = await (await fetch('/api/me')).json();
+  const box = document.getElementById('auth');
+  if(me.authed){
+    box.innerHTML = `<span class="sub">${me.login}</span><a class="btn ghost" href="/auth/logout">로그아웃</a>`;
+    document.getElementById('user').value = me.login;
+    document.getElementById('user').disabled = true;
+    scan();
+  } else if(me.oauth_configured){
+    box.innerHTML = `<a class="btn" href="/auth/login">GitHub로 로그인</a>`;
+  } else {
+    box.innerHTML = `<span class="sub">OAuth 미설정 — 공개 아이디로만 검색</span>`;
+  }
+}
+async function scan(){
+  const me = await (await fetch('/api/me')).json();
+  const user = document.getElementById('user').value.trim();
+  const url = me.authed ? '/api/scan' : `/api/scan?user=${encodeURIComponent(user)}`;
+  if(!me.authed && !user) return;
+  const st = document.getElementById('status'); st.textContent = '커밋 읽는 중…';
+  document.getElementById('scanBtn').disabled = true;
+  try{
+    const r = await fetch(url);
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || r.statusText);
+    render(d); st.textContent = `${d.repos_scanned}개 레포 스캔`;
+  }catch(e){ st.textContent = '실패: ' + e.message; }
+  document.getElementById('scanBtn').disabled = false;
+}
+function render(d){
+  document.getElementById('out').style.display='block';
+  document.getElementById('who').textContent = d.login;
+  const pct = Math.round(d.ai_ratio*100);
+  document.getElementById('ratio').textContent = pct;
+  document.getElementById('heroBar').style.width = pct+'%';
+  document.getElementById('counts').textContent = `AI 관여 ${d.ai_commits} · 전체 ${d.total_commits} 커밋`;
+
+  const months = Object.entries(d.by_month).slice(-18);
+  const max = Math.max(1, ...months.map(([,v])=>v.total));
+  document.getElementById('months').innerHTML = months.map(([m,v])=>
+    `<div class="m" title="${m}: AI ${v.ai} / ${v.total}"><b class="ai" style="height:${v.ai/max*100}%"></b><b style="height:${(v.total-v.ai)/max*100}%;border-radius:0"></b></div>`).join('');
+  document.getElementById('mlabels').innerHTML = months.map(([m])=>`<span>${m.slice(2)}</span>`).join('');
+
+  const tb = document.querySelector('#tools tbody');
+  tb.innerHTML = Object.entries(d.by_tool).map(([t,n])=>{
+    const ms = Object.entries(d.tool_models[t]||{}).map(([m,c])=>`<span>${m} ${c}</span>`).join('');
+    return `<tr><td>${t}</td><td class="num">${n}</td><td class="chips">${ms||'<span class="sub">—</span>'}</td></tr>`;
+  }).join('') || '<tr><td colspan=3 class="sub">AI 흔적이 있는 커밋이 없습니다.</td></tr>';
+
+  document.querySelector('#repos tbody').innerHTML = d.repos.map(r=>
+    `<tr><td>${r.repo.split('/')[1]}</td>
+     <td><div class="mini"><i style="width:${r.ratio*100}%"></i></div></td>
+     <td class="num">${r.ai} / ${r.total}</td>
+     <td class="chips">${Object.entries(r.tools).map(([t,n])=>`<span>${t} ${n}</span>`).join('')}</td></tr>`).join('');
+  document.getElementById('note').textContent = d.note;
+  document.getElementById('errors').innerHTML = (d.errors||[]).map(e=>`${e.repo}: ${e.error}`).join('<br>');
+}
+init();
+</script>
+</body>
+</html>
